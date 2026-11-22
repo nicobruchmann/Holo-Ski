@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Holo Ski – Hang-Prototyp</title>
+<style>
+  :root { --bg:#0b0f14; --fg:#f2f5f8; --muted:#9aa7b4; --acc:#4da3ff; --warn:#ffb020; --crit:#ff5a5a; --panel:rgba(11,15,20,.78); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden; }
+  #cam { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; background:#1a222c; }
+  #hud { position:fixed; inset:0; pointer-events:none; }
+  #cross { position:absolute; left:50%; top:42%; width:64px; height:64px; margin:-32px 0 0 -32px; border:2px solid var(--fg); border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,.5); }
+  #cross::before,#cross::after { content:""; position:absolute; background:var(--fg); }
+  #cross::before { left:50%; top:-14px; bottom:-14px; width:2px; margin-left:-1px; }
+  #cross::after { top:50%; left:-14px; right:-14px; height:2px; margin-top:-1px; }
+  #cross.hit { border-color:var(--acc); }
+  #cross.warn { border-color:var(--warn); }
+  .bar { position:absolute; left:0; right:0; padding:8px 12px; background:var(--panel); pointer-events:auto; }
+  #topbar { top:0; padding-top:calc(8px + env(safe-area-inset-top)); display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12.5px; color:var(--muted); }
+  #topbar b { color:var(--fg); font-weight:600; }
+  #panel { bottom:0; padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
+  .grid { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:14px; }
+  .grid .k { color:var(--muted); }
+  .flag { display:inline-block; padding:1px 7px; border-radius:6px; font-size:12.5px; font-weight:600; }
+  .flag.warn { background:rgba(255,176,32,.2); color:var(--warn); }
+  .flag.neutral { background:rgba(154,167,180,.2); color:var(--muted); }
+  .flag.crit { background:rgba(255,90,90,.2); color:var(--crit); }
+  #profile { width:100%; height:70px; margin-top:6px; display:block; }
+  .btns { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  button { font:inherit; font-size:14px; padding:8px 12px; border-radius:10px; border:1px solid #3a4652; background:#1b232c; color:var(--fg); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#04121f; font-weight:600; }
+  .screen { position:fixed; inset:0; overflow:auto; background:var(--bg); padding:calc(20px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom)); }
+  .screen h1 { font-size:21px; margin:0 0 8px; }
+  .screen h2 { font-size:16px; margin:18px 0 6px; }
+  .screen p, .screen li { color:#c9d2db; }
+  .note { border-left:3px solid var(--crit); padding:6px 10px; background:rgba(255,90,90,.08); color:#f0d2d2; }
+  label { display:block; margin:8px 0 4px; color:var(--muted); font-size:13px; }
+  input[type=number], select { font:inherit; width:100%; padding:8px; border-radius:8px; border:1px solid #3a4652; background:#141b22; color:var(--fg); }
+  input[type=range] { width:100%; }
+  .aspects { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .aspects label { margin:0; display:flex; align-items:center; gap:6px; padding:6px; border:1px solid #3a4652; border-radius:8px; color:var(--fg); }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  #sim { display:none; }
+  #sim.on { display:block; }
+  .hidden { display:none !important; }
+  #toast { position:fixed; left:50%; top:30%; transform:translateX(-50%); background:var(--panel); padding:8px 12px; border-radius:10px; font-size:13px; color:var(--fg); pointer-events:none; opacity:0; transition:opacity .3s; max-width:90%; text-align:center; }
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<div id="hud" class="hidden">
+  <div id="cross"></div>
+  <div id="topbar" class="bar">
+    <span>GPS <b id="tGps">–</b></span>
+    <span>Richtung <b id="tHead">–</b></span>
+    <span>Blickwinkel <b id="tElev">–</b></span>
+    <span>Gelände <b id="tDem">–</b></span>
+    <span>Bulletin <b id="tBul">–</b></span>
+  </div>
+  <div id="panel" class="bar">
+    <div id="sim">
+      <div class="row2">
+        <div><label>Richtung <span id="simHv"></span></label><input id="simH" type="range" min="0" max="359" value="200"></div>
+        <div><label>Blickwinkel <span id="simEv"></span></label><input id="simE" type="range" min="-30" max="20" step="0.5" value="-3"></div>
+      </div>
+    </div>
+    <div class="grid" id="out">
+      <span class="k">Treffer</span><span id="oHit">zielen …</span>
+    </div>
+    <canvas id="profile"></canvas>
+    <div class="btns">
+      <button id="bHold">Halten</button>
+      <button id="bSettings">Bulletin &amp; Einstellungen</button>
+      <button id="bCopy">Messung kopieren</button>
+    </div>
+  </div>
+</div>
+
+<div id="start" class="screen">
+  <h1>Holo Ski – Hang-Prototyp</h1>
+  <p>Richte das Handy auf einen Hang. Die App bestimmt per GPS, Kompass und Geländemodell, welchen Hang du anvisierst, und zeigt Neigung, Exposition, Höhe und den Abgleich mit dem Lawinenbericht, den du eingibst.</p>
+  <p class="note"><b>Testprototyp, kein Sicherheitsgerät.</b> Die App misst nicht die Schneedecke und sagt nichts über die Stabilität eines Hangs. Das Geländemodell ist grob (Raster ca. 10–30 m), Kompassfehler von mehreren Grad sind normal. Nicht für Entscheidungen im Gelände verwenden.</p>
+  <div class="btns">
+    <button class="primary" id="bStart">Mit Sensoren starten</button>
+    <button id="bSim">Simulation (ohne Sensoren)</button>
+  </div>
+  <h2>Simulationsort</h2>
+  <div class="row2">
+    <div><label>Breite</label><input id="simLat" type="number" step="0.0001" value="47.8740"></div>
+    <div><label>Länge</label><input id="simLon" type="number" step="0.0001" value="8.0040"></div>
+  </div>
+  <p style="font-size:13px;color:var(--muted)">Voreinstellung: Feldberg (Schwarzwald). Für die Simulation einfach einen Standort eintragen; die Richtung steuerst du mit Reglern.</p>
+</div>
+
+<div id="settings" class="screen hidden">
+  <h1>Lawinenbericht &amp; Einstellungen</h1>
+  <p style="font-size:13px;color:var(--muted)">Werte aus dem aktuellen Lawinenbericht deiner Region abschreiben. Sie werden nur auf diesem Gerät gespeichert.</p>
+  <label>Gefahrenstufe</label>
+  <select id="sLevel">
+    <option value="0">nicht gesetzt</option>
+    <option value="1">1 – gering</option>
+    <option value="2">2 – mäßig</option>
+    <option value="3">3 – erheblich</option>
+    <option value="4">4 – groß</option>
+    <option value="5">5 – sehr groß</option>
+  </select>
+  <label>Lawinenproblem</label>
+  <select id="sProblem">
+    <option>nicht gesetzt</option><option>Neuschnee</option><option>Triebschnee</option><option>Altschnee</option><option>Nassschnee</option><option>Gleitschnee</option>
+  </select>
+  <label>Gefahrenstellen: Expositionen (Kernzone)</label>
+  <div class="aspects" id="sAspects"></div>
+  <div class="row2">
+    <div><label>Höhenlage</label>
+      <select id="sElevMode"><option value="all">alle Höhen</option><option value="above">oberhalb</option><option value="below">unterhalb</option></select></div>
+    <div><label>Grenze (m)</label><input id="sElev" type="number" step="100" value="2000"></div>
+  </div>
+  <label>Datum des Berichts</label>
+  <input id="sDate" type="date">
+  <h2>Messung</h2>
+  <label>Kompass-Korrektur: <span id="sOffV">0°</span></label>
+  <input id="sOff" type="range" min="-30" max="30" step="0.5" value="0">
+  <p style="font-size:13px;color:var(--muted)">Kalibrieren: Einen bekannten Gipfel anvisieren und so lange korrigieren, bis die Treffer-Höhe zur Gipfelhöhe passt.</p>
+  <label>Maximale Reichweite: <span id="sMaxV">5 km</span></label>
+  <input id="sMax" type="range" min="1000" max="10000" step="500" value="5000">
+  <label>Streuung für Unsicherheit: <span id="sSprV">±2°</span></label>
+  <input id="sSpr" type="range" min="0" max="5" step="0.5" value="2">
+  <div class="btns"><button class="primary" id="bSave">Speichern &amp; zurück</button></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+// ---------- Konstanten ----------
+const Z = 13;                       // Zoomstufe der Geländekacheln
+const TILE = 256;
+const R_EARTH = 6371000;
+const EYE = 1.6;                    // Augenhöhe über Gelände (m)
+const STEP = 10;                    // Schrittweite Raycasting (m)
+const ASPECTS = ['N','NO','O','SO','S','SW','W','NW'];
+const ERM = {1:null, 2:40, 3:35, 4:30, 5:0}; // Grenzneigung elementare Reduktionsmethode (Munter)
+const tileUrl = (x,y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${Z}/${x}/${y}.png`;
+
+// ---------- Zustand ----------
+const S = {
+  mode:null, lat:null, lon:null, acc:null,
+  head:null, elev:null, hs:0, hc:0, init:false,
+  hold:false, last:null,
+  cfg:{ level:0, problem:'nicht gesetzt', aspects:[], elevMode:'all', elevLimit:2000, date:'', offset:0, maxDist:5000, spread:2 }
+};
+try { Object.assign(S.cfg, JSON.parse(localStorage.getItem('holoSkiCfg')||'{}')); } catch(e) {}
+
+const $ = id => document.getElementById(id);
+function toast(msg) { const t=$('toast'); t.textContent=msg; t.style.opacity=1; clearTimeout(toast.t); toast.t=setTimeout(()=>t.style.opacity=0,2600); }
+
+// ---------- Geländekacheln (Terrarium) ----------
+const tiles = new Map();
+let pending = 0;
+function loadTile(x,y) {
+  const k = x+'/'+y;
+  if (tiles.has(k)) return;
+  tiles.set(k, 'loading'); pending++; updateDemStatus();
+  fetch(tileUrl(x,y), {mode:'cors'})
+    .then(r => { if(!r.ok) throw new Error(r.status); return r.blob(); })
+    .then(b => createImageBitmap(b))
+    .then(img => {
+      const c = document.createElement('canvas'); c.width=c.height=TILE;
+      const g = c.getContext('2d', {willReadFrequently:true}); g.drawImage(img,0,0);
+      tiles.set(k, g.getImageData(0,0,TILE,TILE).data);
+    })
+    .catch(() => tiles.set(k, 'error'))
+    .finally(() => { pending--; updateDemStatus(); });
+}
+function updateDemStatus() {
+  let ok=0, err=0; for (const v of tiles.values()) { if (v==='error') err++; else if (v!=='loading') ok++; }
+  $('tDem').textContent = pending ? `lädt (${pending})` : err ? `${ok} Kacheln, ${err} Fehler` : `${ok} Kacheln`;
+}
+function decode(r,g,b) { return r*256 + g + b/256 - 32768; }
+function globalPx(lat, lon) {
+  const n = Math.pow(2,Z)*TILE, lr = lat*Math.PI/180;
+  return [ (lon+180)/360*n, (1 - Math.asinh(Math.tan(lr))/Math.PI)/2*n ];
+}
+function pixel(gx, gy) {
+  const tx = Math.floor(gx/TILE), ty = Math.floor(gy/TILE);
+  const t = tiles.get(tx+'/'+ty);
+  if (t === undefined) { loadTile(tx,ty); return null; }
+  if (typeof t === 'string') return null;
+  const i = ((gy - ty*TILE)*TILE + (gx - tx*TILE))*4;
+  return decode(t[i], t[i+1], t[i+2]);
+}
+function elevAt(lat, lon) {
+  const [px,py] = globalPx(lat,lon);
+  const x0 = Math.floor(px-0.5), y0 = Math.floor(py-0.5), fx = px-0.5-x0, fy = py-0.5-y0;
+  const a=pixel(x0,y0), b=pixel(x0+1,y0), c=pixel(x0,y0+1), d=pixel(x0+1,y0+1);
+  if (a===null||b===null||c===null||d===null) return null;
+  return a*(1-fx)*(1-fy) + b*fx*(1-fy) + c*(1-fx)*fy + d*fx*fy;
+}
+function preload(lat, lon, radiusM) {
+  const [px,py] = globalPx(lat,lon);
+  const mPerPx = 2*Math.PI*R_EARTH*Math.cos(lat*Math.PI/180)/(Math.pow(2,Z)*TILE);
+  const r = Math.ceil(radiusM/mPerPx/TILE);
+  const cx = Math.floor(px/TILE), cy = Math.floor(py/TILE);
+  for (let dx=-r; dx<=r; dx++) for (let dy=-r; dy<=r; dy++) loadTile(cx+dx, cy+dy);
+}
+
+// ---------- Geometrie ----------
+function offset(lat, lon, headDeg, distM) {
+  const h = headDeg*Math.PI/180;
+  return [ lat + distM*Math.cos(h)/R_EARTH*180/Math.PI,
+           lon + distM*Math.sin(h)/(R_EARTH*Math.cos(lat*Math.PI/180))*180/Math.PI ];
+}
+function slopeAspect(lat, lon, s=15) {
+  const e = elevAt(...offset(lat,lon,90,s)), w = elevAt(...offset(lat,lon,270,s));
+  const n = elevAt(...offset(lat,lon,0,s)),  so = elevAt(...offset(lat,lon,180,s));
+  if ([e,w,n,so].some(v => v===null)) return null;
+  const dzdx = (e-w)/(2*s), dzdy = (n-so)/(2*s);
+  const slope = Math.atan(Math.hypot(dzdx,dzdy))*180/Math.PI;
+  let aspect = Math.atan2(-dzdx, -dzdy)*180/Math.PI; if (aspect<0) aspect+=360;  // Richtung hangabwärts
+  return {slope, aspect};
+}
+function maxSlopeAround(lat, lon, radius=45, grid=15) {
+  let max = null;
+  for (let dx=-radius; dx<=radius; dx+=grid) for (let dy=-radius; dy<=radius; dy+=grid) {
+    if (dx*dx+dy*dy > radius*radius) continue;
+    const d = Math.hypot(dx,dy), h = Math.atan2(dx,dy)*180/Math.PI;
+    const p = d ? offset(lat,lon,h,d) : [lat,lon];
+    const sa = slopeAspect(p[0],p[1]);
+    if (sa && (max===null || sa.slope>max)) max = sa.slope;
+  }
+  return max;
+}
+// Sichtstrahl: erster Schnittpunkt mit dem Gelände
+function raycast(lat, lon, headDeg, elevDeg, maxDist) {
+  const g0 = elevAt(lat,lon); if (g0===null) return {status:'nodata'};
+  const z0 = g0 + EYE, t = Math.tan(elevDeg*Math.PI/180);
+  const profile = [];
+  let prevD = 0, prevDiff = -EYE;
+  for (let d=STEP; d<=maxDist; d+=STEP) {
+    const p = offset(lat,lon,headDeg,d);
+    const ground = elevAt(p[0],p[1]);
+    if (ground===null) return {status:'loading', profile};
+    const eff = ground - d*d*0.87/(2*R_EARTH);           // Erdkrümmung + Refraktion
+    profile.push([d, eff]);
+    const diff = eff - (z0 + d*t);
+    if (diff >= 0) {
+      const f = prevDiff/(prevDiff-diff), dh = prevD + f*(d-prevD); // lineare Verfeinerung
+      const hp = offset(lat,lon,headDeg,dh);
+      return {status:'hit', dist:dh, lat:hp[0], lon:hp[1], ground:elevAt(hp[0],hp[1]), z0, profile};
+    }
+    prevD = d; prevDiff = diff;
+  }
+  return {status:'sky', z0, profile};
+}
+
+// ---------- Orientierung ----------
+// W3C DeviceOrientation (alpha, beta, gamma) -> Richtung der Rückkamera (-Z) in Ost/Nord/Oben
+function cameraVector(alpha, beta, gamma) {
+  const r = Math.PI/180, ca=Math.cos(alpha*r), sa=Math.sin(alpha*r), cb=Math.cos(beta*r), sb=Math.sin(beta*r), cg=Math.cos(gamma*r), sg=Math.sin(gamma*r);
+  return [ -ca*sg - sa*sb*cg, -sa*sg + ca*sb*cg, -cb*cg ];
+}
+function onOrientation(e) {
+  if (S.mode!=='live' || e.beta===null) return;
+  const v = cameraVector(e.alpha||0, e.beta, e.gamma||0);
+  const elev = Math.asin(Math.max(-1,Math.min(1,v[2])))*180/Math.PI;
+  let head;
+  if (typeof e.webkitCompassHeading === 'number') head = e.webkitCompassHeading;          // iOS
+  else if (e.absolute || e.type==='deviceorientationabsolute') { head = Math.atan2(v[0],v[1])*180/Math.PI; }
+  else return;
+  smooth(head, elev);
+}
+function smooth(head, elev) {
+  const k = 0.2, r = Math.PI/180;
+  if (!S.init) { S.hs=Math.sin(head*r); S.hc=Math.cos(head*r); S.elev=elev; S.init=true; }
+  else { S.hs += k*(Math.sin(head*r)-S.hs); S.hc += k*(Math.cos(head*r)-S.hc); S.elev += k*(elev-S.elev); }
+  S.head = (Math.atan2(S.hs,S.hc)/r + 360) % 360;
+}
+
+// ---------- Auswertung ----------
+function aspectName(a) { return ASPECTS[Math.round(a/45)%8]; }
+function inCoreZone(aspect, z) {
+  const c = S.cfg; if (!c.aspects.length) return null;
+  const aOk = c.aspects.includes(aspectName(aspect));
+  const zOk = c.elevMode==='all' || (c.elevMode==='above' ? z>=c.elevLimit : z<=c.elevLimit);
+  return aOk && zOk;
+}
+function evaluate() {
+  if (S.hold || S.lat===null || S.head===null) return;
+  const head = (S.head + S.cfg.offset + 360) % 360;
+  $('tHead').textContent = Math.round(head)+'° '+aspectName(head);
+  $('tElev').textContent = S.elev.toFixed(1)+'°';
+  const main = raycast(S.lat, S.lon, head, S.elev, S.cfg.maxDist);
+  const out = $('out'), cross = $('cross');
+  cross.className = '';
+  if (main.status !== 'hit') {
+    out.innerHTML = `<span class="k">Treffer</span><span>${ {nodata:'Geländedaten laden …', loading:'Geländedaten laden …', sky:'kein Gelände in Reichweite (Himmel?)'}[main.status] }</span>`;
+    drawProfile(main, null); S.last=null; return;
+  }
+  const sa = slopeAspect(main.lat, main.lon);
+  const maxS = maxSlopeAround(main.lat, main.lon);
+  // Unsicherheit: Nachbarstrahlen
+  const sp = S.cfg.spread, alts = sp ? [raycast(S.lat,S.lon,head-sp,S.elev,S.cfg.maxDist), raycast(S.lat,S.lon,head+sp,S.elev,S.cfg.maxDist), raycast(S.lat,S.lon,head,S.elev+sp/2,S.cfg.maxDist), raycast(S.lat,S.lon,head,S.elev-sp/2,S.cfg.maxDist)] : [];
+  const altSl = alts.filter(a=>a.status==='hit').map(a=>slopeAspect(a.lat,a.lon)).filter(Boolean).map(a=>a.slope);
+  if (sa) altSl.push(sa.slope);
+  const slRange = altSl.length>1 ? `${Math.round(Math.min(...altSl))}–${Math.round(Math.max(...altSl))}°` : '–';
+  const lateral = Math.round(main.dist*Math.tan(sp*Math.PI/180));
+
+  const lvl = +S.cfg.level, lim = ERM[lvl];
+  let ermTxt = '<span class="flag neutral">Stufe nicht gesetzt</span>';
+  let over = false;
+  if (lvl===1) ermTxt = '<span class="flag neutral">Stufe 1: keine Grenzneigung</span>';
+  else if (lvl===5) { ermTxt = '<span class="flag crit">Stufe 5: Verzicht auf Steilgelände</span>'; over = true; }
+  else if (lim && maxS!==null) { over = maxS >= lim; ermTxt = `Grenze ${lim}° · gemessen ${Math.round(maxS)}° ` + (over ? '<span class="flag warn">über Grenze</span>' : '<span class="flag neutral">unter Grenze</span>'); }
+  const core = sa ? inCoreZone(sa.aspect, main.ground) : null;
+  const coreTxt = core===null ? '<span class="flag neutral">nicht gesetzt</span>' : core ? '<span class="flag warn">ja – Gefahrenstelle lt. Bericht</span>' : '<span class="flag neutral">nein</span>';
+  if (over || core) cross.className = 'warn'; else cross.className = 'hit';
+
+  out.innerHTML = `
+    <span class="k">Distanz</span><span>${Math.round(main.dist)} m (seitl. Unschärfe ±${lateral} m)</span>
+    <span class="k">Höhe</span><span>${Math.round(main.ground)} m</span>
+    <span class="k">Neigung</span><span>${sa?Math.round(sa.slope)+'°':'–'} am Punkt · steilste Stelle ±45 m: ${maxS!==null?Math.round(maxS)+'°':'–'} · Streuung ${slRange}</span>
+    <span class="k">Exposition</span><span>${sa?aspectName(sa.aspect)+' ('+Math.round(sa.aspect)+'°)':'–'}</span>
+    <span class="k">Kernzone</span><span>${coreTxt}</span>
+    <span class="k">Reduktionsm.</span><span>${ermTxt}</span>
+    <span class="k">Problem</span><span>${S.cfg.problem}</span>`;
+  S.last = {zeit:new Date().toISOString(), standort:[+S.lat.toFixed(5),+S.lon.toFixed(5)], gpsGenauigkeit_m:S.acc, richtung:+head.toFixed(1), blickwinkel:+S.elev.toFixed(1),
+            treffer:[+main.lat.toFixed(5),+main.lon.toFixed(5)], distanz_m:Math.round(main.dist), hoehe_m:Math.round(main.ground),
+            neigung:sa?+sa.slope.toFixed(1):null, maxNeigung45m:maxS!==null?+maxS.toFixed(1):null, exposition:sa?aspectName(sa.aspect):null, kernzone:core, stufe:lvl};
+  drawProfile(main, main.dist);
+}
+function drawProfile(r, hitD) {
+  const c = $('profile'), dpr = window.devicePixelRatio||1, w = c.clientWidth, h = c.clientHeight;
+  c.width = w*dpr; c.height = h*dpr; const g = c.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  const p = r.profile||[]; if (p.length<2) return;
+  const maxD = hitD ? Math.min(p[p.length-1][0], hitD*1.25+200) : p[p.length-1][0];
+  const pts = p.filter(q=>q[0]<=maxD);
+  const zs = pts.map(q=>q[1]).concat([r.z0||pts[0][1]]);
+  const zmin = Math.min(...zs)-20, zmax = Math.max(...zs)+20;
+  const X = d => d/maxD*w, Y = z => h - (z-zmin)/(zmax-zmin)*h;
+  g.fillStyle = 'rgba(154,167,180,.35)'; g.beginPath(); g.moveTo(0,h);
+  pts.forEach(q=>g.lineTo(X(q[0]),Y(q[1]))); g.lineTo(X(pts[pts.length-1][0]),h); g.closePath(); g.fill();
+  if (r.z0!==undefined) {
+    const t = Math.tan(S.elev*Math.PI/180), end = hitD||maxD;
+    g.strokeStyle = '#4da3ff'; g.lineWidth = 1.5; g.setLineDash([4,3]); g.beginPath(); g.moveTo(0,Y(r.z0)); g.lineTo(X(end),Y(r.z0+end*t)); g.stroke(); g.setLineDash([]);
+    if (hitD) { g.fillStyle='#4da3ff'; g.beginPath(); g.arc(X(hitD),Y(r.z0+hitD*t),4,0,7); g.fill(); }
+  }
+}
+
+// ---------- Kamera & Sensoren ----------
+async function startCamera() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false});
+    $('cam').srcObject = s;
+  } catch(e) { toast('Kamera nicht verfügbar – App läuft ohne Bild.'); }
+}
+function startGps() {
+  if (!navigator.geolocation) { toast('Kein GPS verfügbar.'); return; }
+  navigator.geolocation.watchPosition(p => {
+    const first = S.lat===null;
+    S.lat = p.coords.latitude; S.lon = p.coords.longitude; S.acc = Math.round(p.coords.accuracy);
+    $('tGps').textContent = '±'+S.acc+' m';
+    if (first) preload(S.lat,S.lon,S.cfg.maxDist);
+  }, err => toast('GPS: '+err.message), {enableHighAccuracy:true, maximumAge:2000, timeout:20000});
+}
+async function startLive() {
+  if (!window.isSecureContext) { toast('Seite muss über https laufen, sonst sind Sensoren gesperrt.'); }
+  try {
+    if (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
+      const r = await DeviceOrientationEvent.requestPermission(); if (r!=='granted') { toast('Bewegungssensoren abgelehnt.'); }
+    }
+  } catch(e) {}
+  S.mode = 'live';
+  if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOrientation);
+  else window.addEventListener('deviceorientation', onOrientation);
+  startCamera(); startGps(); showHud();
+  setTimeout(()=>{ if (S.head===null) toast('Kein Kompass-Signal. Handy aufrecht halten oder Achterbewegung zur Kalibrierung.'); }, 4000);
+}
+function startSim() {
+  S.mode = 'sim';
+  S.lat = parseFloat($('simLat').value); S.lon = parseFloat($('simLon').value); S.acc = 0;
+  $('tGps').textContent = 'Simulation'; $('sim').classList.add('on');
+  const upd = () => { S.head = +$('simH').value; S.elev = +$('simE').value; $('simHv').textContent = S.head+'°'; $('simEv').textContent = S.elev+'°'; };
+  $('simH').oninput = upd; $('simE').oninput = upd; upd();
+  preload(S.lat,S.lon,S.cfg.maxDist); showHud();
+}
+function showHud() {
+  $('start').classList.add('hidden'); $('hud').classList.remove('hidden'); renderBulletinTag();
+  if (screen.orientation && screen.orientation.type && screen.orientation.type.startsWith('landscape')) toast('Bitte Hochformat verwenden.');
+  setInterval(evaluate, 200);
+}
+
+// ---------- Einstellungen ----------
+function renderBulletinTag() {
+  const c = S.cfg;
+  let t = c.level ? 'Stufe '+c.level : 'nicht gesetzt';
+  if (c.date) { const age = Math.floor((Date.now()-Date.parse(c.date))/864e5); t += age>0 ? ` · ${age} Tg. alt` : ' · heute'; if (age>0) t += ' ⚠'; }
+  $('tBul').textContent = t;
+}
+function openSettings() {
+  const c = S.cfg;
+  $('sLevel').value = c.level; $('sProblem').value = c.problem; $('sElevMode').value = c.elevMode; $('sElev').value = c.elevLimit; $('sDate').value = c.date;
+  $('sOff').value = c.offset; $('sMax').value = c.maxDist; $('sSpr').value = c.spread; labels();
+  $('sAspects').innerHTML = ASPECTS.map(a => `<label><input type="checkbox" value="${a}" ${c.aspects.includes(a)?'checked':''}>${a}</label>`).join('');
+  $('settings').classList.remove('hidden');
+}
+function labels() { $('sOffV').textContent = $('sOff').value+'°'; $('sMaxV').textContent = ($('sMax').value/1000)+' km'; $('sSprV').textContent = '±'+$('sSpr').value+'°'; }
+['sOff','sMax','sSpr'].forEach(id => $(id).addEventListener('input', labels));
+$('bSave').onclick = () => {
+  const c = S.cfg;
+  c.level = +$('sLevel').value; c.problem = $('sProblem').value; c.elevMode = $('sElevMode').value; c.elevLimit = +$('sElev').value; c.date = $('sDate').value;
+  c.offset = +$('sOff').value; c.maxDist = +$('sMax').value; c.spread = +$('sSpr').value;
+  c.aspects = [...document.querySelectorAll('#sAspects input:checked')].map(i=>i.value);
+  try { localStorage.setItem('holoSkiCfg', JSON.stringify(c)); } catch(e) {}
+  if (S.lat!==null) preload(S.lat,S.lon,c.maxDist);
+  $('settings').classList.add('hidden'); renderBulletinTag();
+};
+$('bSettings').onclick = openSettings;
+$('bHold').onclick = () => { S.hold = !S.hold; $('bHold').textContent = S.hold ? 'Weiter' : 'Halten'; };
+$('bCopy').onclick = async () => {
+  if (!S.last) { toast('Noch keine Messung.'); return; }
+  try { await navigator.clipboard.writeText(JSON.stringify(S.last)); toast('Messung kopiert.'); } catch(e) { toast('Kopieren nicht möglich.'); }
+};
+$('bStart').onclick = startLive;
+$('bSim').onclick = startSim;
+
+// Für Tests in Node exportieren
+if (typeof module !== 'undefined') module.exports = {cameraVector, decode, globalPx, offset};
+</script>
+</body>
+</html>
